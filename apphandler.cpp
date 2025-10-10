@@ -1783,12 +1783,69 @@ ipmi::RspType<std::vector<uint8_t>> ipmiControllerWriteRead(
     return ipmi::responseSuccess(readBuf);
 }
 
+// 添加自定义OEM命令
+ipmi::RspType<uint8_t> ipmiOEMGetFFValue()
+{
+    // 通过DBus获取属性
+    auto bus = sdbusplus::bus::new_default();
+    auto method = bus.new_method_call(
+        "xyz.openbmc_project.CustomManager", "/xyz/openbmc_project/custommanager",
+        "org.freedesktop.DBus.Properties", "Get");
+    method.append("xyz.openbmc_project.CustomManager.value", "MyValue");
+    std::variant<uint8_t> value;
+    try
+    {
+        auto reply = bus.call(method);
+        reply.read(value);
+    }
+    catch (const sdbusplus::exception_t& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+                "ipmiOEMGetMyValue: can't get my value!",
+                phosphor::logging::entry("ERR=%s", e.what()));
+        return ipmi::responseResponseError();
+    }
+    return ipmi::responseSuccess(static_cast<uint8_t>(std::get<uint8_t>(value)));
+}
+
+ipmi::RspType<> ipmiOEMSetFFValue(uint8_t newValue)
+{
+    // 通过DBus设置属性
+    auto bus = sdbusplus::bus::new_default();
+    auto method = bus.new_method_call(
+        "xyz.openbmc_project.CustomManager", "/xyz/openbmc_project/custommanager",
+        "org.freedesktop.DBus.Properties", "Set");
+    method.append("xyz.openbmc_project.CustomManager.value", "MyValue",
+                  std::variant<uint8_t>(newValue));
+    try 
+    {
+        bus.call(method);
+    }
+    catch (const sdbusplus::exception_t& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+                "ipmiOEMSetMyValue: can't set my value!",
+                phosphor::logging::entry("ERR=%s", e.what()));
+        return ipmi::responseResponseError();
+    }
+    
+    return ipmi::responseSuccess();;
+}
+
+
 void registerNetFnAppFunctions()
 {
     // <Get Device ID>
     ipmi::registerHandler(ipmi::prioOpenBmcBase, ipmi::netFnApp,
                           ipmi::app::cmdGetDeviceId, ipmi::Privilege::User,
                           ipmiAppGetDeviceId);
+
+    // oem
+    ipmi::registerHandler(ipmi::prioOpenBmcBase, ipmi::netFnOemSeven, 
+                          0x12, ipmi::Privilege::User, ipmiOEMGetFFValue);
+    ipmi::registerHandler(ipmi::prioOpenBmcBase, ipmi::netFnOemSeven, 
+                          0x13, ipmi::Privilege::User, ipmiOEMSetFFValue);
+
 
     // <Get BT Interface Capabilities>
     ipmi::registerHandler(ipmi::prioOpenBmcBase, ipmi::netFnApp,
